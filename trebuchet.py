@@ -16,6 +16,8 @@ import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 from matplotlib.collections import PatchCollection
 
+from matplotlib.animation import FuncAnimation
+
 # state variables and derivatives
 x = sp.symbols('x')
 x, th1, th2 = sp.symbols('x, th1, th2')
@@ -170,35 +172,46 @@ p2_f=sp.lambdify(((z),(pFixed),(pOptim),), p2)
 pBar_f=sp.lambdify(((z),(pFixed),(pOptim),), pBar)
 p3_f=sp.lambdify(((z),(pFixed),(pOptim),), p3)
 
+fig, ax = plt.subplots()
+ln, = plt.plot([], [], 'ro')
+frames = range(0,len(t))
+def init():
+    ax.clear()   
+    ax.set_aspect(aspect='equal', adjustable='box')
+    ax.set_xlim(left=-3, right=3)
+    ax.set_ylim(bottom=-0.5, top=5)
+    ax.set_xbound(lower=-5, upper=5)
+    ax.set_ybound(lower=-0.5, upper=5)
+    plt.grid(b=True)
+    return ln,
+
 def showTrebuchet(z, pFixed, pOptim, ax):
     z = z[:3]
     p1 = p1_f(z, pFixed, pOptim)
     p2 = p2_f(z, pFixed, pOptim)
     pBar = pBar_f(z, pFixed, pOptim)
     p3 = p3_f(z, pFixed, pOptim)
-    x = np.concatenate((p2,pBar,p3), axis=1)
-    
-    ax.clear()
+    x = np.concatenate((p2,pBar,p3), axis=1)    
+    init()
     axle = plt.Circle(p1, radius=0.07)
-    m2 = plt.Circle(p2, radius=0.3)
+    m2 = plt.Circle(p2, radius=0.3,color=[1.0,0.2,0.2,1.0])
     joint = plt.Circle(pBar, radius=0.07)
     m3 = plt.Circle(p3, radius=0.1)
     ax.add_patch(axle)
     ax.add_patch(joint)
     ax.add_patch(m2)
     ax.add_patch(m3)
-    ax.set_xlim(-3, 3)
-    ax.set_ylim(-0.5, 5)
-    plt.plot(x[0,:],x[1,:],)
-    plt.Circle(x[:,0], radius=1.1)
-    plt.axis('equal')
-    plt.grid(b=True)
-    plt.show()
+    plt.plot(x[0,:],x[1,:])
 
-k=0
-k=k+1
-fig, ax = plt.subplots()
-showTrebuchet(Zsol[k,:], pFixedNum, pOptimNum0, ax)
+    
+    
+    
+update = lambda k : showTrebuchet(Zsol[k,:], pFixedNum, pOptimNum0, ax)
+
+    
+ani = FuncAnimation(fig, update, frames,
+                    init_func=init, blit=False)
+plt.show()
 
 
 
