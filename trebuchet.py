@@ -10,7 +10,9 @@ Created on Sat Apr  4 16:27:39 2020
 import sympy as sp
 import numpy as np
 import scipy.integrate as integrate
+import scipy.optimize as opt
 import matplotlib.pyplot as plt
+
 
 import matplotlib.path as mpath
 import matplotlib.lines as mlines
@@ -33,12 +35,8 @@ la,lb,m3 = sp.symbols('la,lb,m3')
 # Lagrange multiplier for floor constraint
 lam = sp.symbols('lam')
 
-pFixed = sp.Matrix([m1,m2,h,g])
-pFixedNum = np.array([10.0,100.0,2.0,9.81])
-
-pOptim = sp.Matrix([la,lb,m3])
-pOptimNum0 = np.array([2.0,2.0,1.0])
-#pOptimNum0 = np.array([2.0,2.99,3.0])
+par = sp.Matrix([m1,m2,h,g,la,lb,m3])
+parNum0 = np.array([1.0,100.0,2.0,9.81,2.0,3.0,3.0])
 
 
 # state vector and derivatives
@@ -106,29 +104,29 @@ coriolisFree = dLdztFree.jacobian(z[:2,:]) * zt[:2,:] - dLdzFree
 ddc_dzdz = dcdz.jacobian(z)
 
 # make functions
-mass_f = sp.lambdify(((z),(pFixed),(pOptim),), mass)
-coriolis_f = sp.lambdify(((z),(zt),(pFixed),(pOptim),), coriolis)
-dcdz_f = sp.lambdify(((z),(pFixed),(pOptim),), dcdz)
-ddc_dzdz_f = sp.lambdify(((z),(pFixed),(pOptim),), ddc_dzdz)
+mass_f = sp.lambdify(((z),(par),), mass)
+coriolis_f = sp.lambdify(((z),(zt),(par),), coriolis)
+dcdz_f = sp.lambdify(((z),(par),), dcdz)
+ddc_dzdz_f = sp.lambdify(((z),(par),), ddc_dzdz)
 
-Etot_f = sp.lambdify(((z),(zt),(pFixed),(pOptim),), Etot)
-Ekm3_f = sp.lambdify(((z),(zt),(pFixed),(pOptim),), Ekm3)
+Etot_f = sp.lambdify(((z),(zt),(par),), Etot)
+Ekm3_f = sp.lambdify(((z),(zt),(par),), Ekm3)
 
-massFree_f = sp.lambdify(((z[:2,:]),(pFixed),(pOptim),), massFree)
-coriolisFree_f = sp.lambdify(((z[:2,:]),(zt[:2,:]),(pFixed),(pOptim),), coriolisFree)
+massFree_f = sp.lambdify(((z[:2,:]),(par),), massFree)
+coriolisFree_f = sp.lambdify(((z[:2,:]),(zt[:2,:]),(par),), coriolisFree)
 
 # initial solution; th2 as a function of th1 such that m3 is on the floor
 th2Init = sp.asin(-(h + la * sp.sin(th1))/lb)
-th2Init_f = sp.lambdify(((th1),(pFixed),(pOptim),), th2Init)
-c_f = sp.lambdify(((z),(pFixed),(pOptim),), c)
+th2Init_f = sp.lambdify(((th1),(par),), th2Init)
+c_f = sp.lambdify(((z),(par),), c)
 
 
-def solve_lam(z, zt, pFixed, pOptim):
-    m_N = mass_f(z, pFixed, pOptim)
+def solve_lam(z, zt, par):
+    m_N = mass_f(z, par)
     mInv_N = np.linalg.inv(m_N)
-    dcdz_N = dcdz_f(z, pFixed, pOptim)
-    ddc_dzdz_N = ddc_dzdz_f(z, pFixed, pOptim)
-    coriolis_N = coriolis_f(z, zt, pFixed, pOptim)
+    dcdz_N = dcdz_f(z, par)
+    ddc_dzdz_N = ddc_dzdz_f(z, par)
+    coriolis_N = coriolis_f(z, zt, par)
     den = np.matmul(np.matmul(dcdz_N.transpose(), mInv_N), dcdz_N)
     num1 = np.matmul(np.matmul(zt, ddc_dzdz_N), zt)
     num2 = np.matmul(np.matmul(dcdz_N.transpose(), mInv_N), coriolis_N)
@@ -136,9 +134,9 @@ def solve_lam(z, zt, pFixed, pOptim):
     return lam_N, m_N, coriolis_N, dcdz_N
 
 
-def drift(z, zt, pFixed, pOptim):
-    lam_N, m_N, coriolis_N, dcdz_N = solve_lam(z, zt, pFixed, pOptim)
-    c_N = c_f(z, pFixed, pOptim)
+def drift(z, zt, par):
+    lam_N, m_N, coriolis_N, dcdz_N = solve_lam(z, zt, par)
+    c_N = c_f(z, par)
     if (lam_N <= 0) and (c_N < 1e-5):
         # floor constraint active
         ztt = np.linalg.solve(m_N, - coriolis_N - lam_N * dcdz_N)
@@ -147,27 +145,27 @@ def drift(z, zt, pFixed, pOptim):
         ztt = np.linalg.solve(m_N, - coriolis_N)
     return ztt[:,0]
 
-def drift1(Z,pFixed, pOptim):
+def drift1(Z,par):
     z = Z[:3]
     zt = Z[3:]
-    ztt = drift(z, zt, pFixed, pOptim);
+    ztt = drift(z, zt, par);
     Zt = np.concatenate((zt, ztt))
     return Zt
 
 # stop event function: stop simulation when exit speed vector angle is 45 deg
-p3t_f = sp.lambdify(((z),(zt),(pFixed),(pOptim),), p3t)
-def launchEvent(Z, pFixed, pOptim):
+p3t_f = sp.lambdify(((z),(zt),(par),), p3t)
+def launchEvent(tt, Z, par, tMin = 0.1):
     z = Z[:3]
     zt = Z[3:]
-    p3t_N = p3t_f(z, zt, pFixed, pOptim)
+    p3t_N = p3t_f(z, zt, par)
     # avoid division by 0 at begin
-    v = p3t_N + np.array([[0.0], [1.0e-3]])
-    return v[0,0]/v[1,0] - 1.0
+    v = p3t_N + np.array([[1.0e-5], [0.5e-5]])
+    return v[1,0]/v[0,0] - 1.0 
     
 
 # initial conditions
-def initCond(th10, pFixed, pOptim):
-    th20 = th2Init_f(th10, pFixed, pOptim)
+def initCond(th10, par):
+    th20 = th2Init_f(th10, par)
     assert(np.all(np.isreal(th20)))
     if np.cos(th20) < 0:
         th20 = np.pi - th20
@@ -175,8 +173,8 @@ def initCond(th10, pFixed, pOptim):
     zt0 = np.array([0.0,0.0,0.0])   
     return z0, zt0
 
-def initCond1(th10, pFixed, pOptim):
-    z0, zt0 = initCond(th10, pFixed, pOptim)
+def initCond1(th10, par):
+    z0, zt0 = initCond(th10, par)
     return np.concatenate((z0, zt0))
 
 
@@ -186,44 +184,47 @@ th1Init = -1.8
 
 
 # simulation
-def simulate(pFixed, pOptim):
-    Z0 = initCond1(th1Init, pFixed, pOptim)
-    fInt = lambda tt, ZZ : drift1(ZZ,pFixed, pOptim)
-    fEvent = lambda tt, ZZ : launchEvent(ZZ,pFixed, pOptim)
+def simulate(par):
+    Z0 = initCond1(th1Init, par)
+    fInt = lambda tt, ZZ : drift1(ZZ,par)
+    fEvent = lambda tt, ZZ : launchEvent(tt, ZZ,par)
     fEvent.terminal = True
-    ivpSol = integrate.solve_ivp(fInt, tSpan, Z0, events = fEvent, rtol=1.0e-6, atol=1.0e-9)
+    ivpSol = integrate.solve_ivp(fInt, tSpan, Z0, events = fEvent, rtol=1.0e-5, atol=1.0e-8)
     return ivpSol
 
-ivpSol = simulate(pFixedNum, pOptimNum0)
+ivpSol = simulate(parNum0)
 
 
 # evaluate enery transfer efficiency
-def efficiency(pFixed, pOptim):
-    ivpSol = simulate(pFixed, pOptim)
-    if not(ivpSol.success):
-        return 0.0
-    elif ivpSol.status == -1:
-        # integration step failed
-        return 0.0
-    elif ivpSol.status == 0:
-        # final time reached, no launch at all
-        return 0.0
-    elif ivpSol.status == 1:
-        # launch event reached, compute energy transfert
-        z0 = ivpSol.y[:3,0]
-        zt0 = ivpSol.y[3:,0]
-        zF = ivpSol.y[:3,-1]
-        ztF = ivpSol.y[3:,-1]
-        Etot0_N = Etot_f(z0, zt0, pFixed, pOptim)
-        Ekm3F_N = Ekm3_f(zF, ztF, pFixed, pOptim)
-        return Ekm3F_N / Etot0_N
-    else:
-        assert(False)
+def efficiency(par):
+    try:
+        ivpSol = simulate(par)          
+        if not(ivpSol.success):
+            return 0.0
+        elif ivpSol.status == -1:
+            # integration step failed
+            return 0.0
+        elif ivpSol.status == 0:
+            # final time reached, no launch at all
+            return 0.0
+        elif ivpSol.status == 1:
+            # launch event reached, compute energy transfert
+            z0 = ivpSol.y[:3,0]
+            zt0 = ivpSol.y[3:,0]
+            zF = ivpSol.y[:3,-1]
+            ztF = ivpSol.y[3:,-1]
+            Etot0_N = Etot_f(z0, zt0, par)
+            Ekm3F_N = Ekm3_f(zF, ztF, par)
+            return Ekm3F_N / Etot0_N
+        else:
+            assert(False)
+            return 0.0
+    except:
         return 0.0
     
 
-ivpSol = simulate(pFixedNum, pOptimNum0)
-ee=[Etot_f(zz[:3],zz[3:],pFixedNum, pOptimNum0) for zz in ivpSol.y.transpose()]
+ivpSol = simulate(parNum0)
+ee=[Etot_f(zz[:3],zz[3:],parNum0) for zz in ivpSol.y.transpose()]
 plt.figure()
 plt.plot(ee)
 plt.show()
@@ -237,10 +238,10 @@ plt.plot(t, Zsol)
     
 
 # functions for animation
-p1_f=sp.lambdify(((z),(pFixed),(pOptim),), p1)
-p2_f=sp.lambdify(((z),(pFixed),(pOptim),), p2)
-pBar_f=sp.lambdify(((z),(pFixed),(pOptim),), pBar)
-p3_f=sp.lambdify(((z),(pFixed),(pOptim),), p3)
+p1_f=sp.lambdify(((z),(par),), p1)
+p2_f=sp.lambdify(((z),(par),), p2)
+pBar_f=sp.lambdify(((z),(par),), pBar)
+p3_f=sp.lambdify(((z),(par),), p3)
 
 fig, ax = plt.subplots()
 ln, = plt.plot([], [], 'ro')
@@ -255,12 +256,12 @@ def init():
     plt.grid(b=True)
     return ln,
 
-def showTrebuchet(z, pFixed, pOptim, ax):
+def showTrebuchet(z, par, ax):
     z = z[:3]
-    p1 = p1_f(z, pFixed, pOptim)
-    p2 = p2_f(z, pFixed, pOptim)
-    pBar = pBar_f(z, pFixed, pOptim)
-    p3 = p3_f(z, pFixed, pOptim)
+    p1 = p1_f(z, par)
+    p2 = p2_f(z, par)
+    pBar = pBar_f(z, par)
+    p3 = p3_f(z, par)
     x = np.concatenate((p2,pBar,p3), axis=1)    
     init()
     axle = plt.Circle(p1, radius=0.07)
@@ -275,20 +276,36 @@ def showTrebuchet(z, pFixed, pOptim, ax):
 
     
     
+if False:
+    update = lambda k : showTrebuchet(Zsol[k,:], parNum0, ax)
+    ani = FuncAnimation(fig, update, frames,init_func=init, blit=False)
+    plt.show()
+
+
+
+if True:  
+    pparOpt0 = parNum0[4:]
+    parOptLB = 0.3 * parNum0[4:]
+    parOptUB = 3.0 * parNum0[4:]
+    bnds = opt.Bounds(parOptLB, parOptUB)
+    fMin = lambda pO : -efficiency(np.concatenate((parNum0[0:4], pO)))
+    optSol = opt.minimize(fMin, pparOpt0, bounds=bnds, options={'disp': True})
     
-update = lambda k : showTrebuchet(Zsol[k,:], pFixedNum, pOptimNum0, ax)
-
+    parOpt = np.concatenate((parNum0[0:4], optSol.x))
+    ivpOpt = simulate(parOpt)
     
-ani = FuncAnimation(fig, update, frames,
-                    init_func=init, blit=False)
-plt.show()
-
-
-
-
-
-
-
+    ZsolOpt = np.array([np.interp(t, ivpOpt.t, ivpOpt.y[k,:]) for k in range(ivpOpt.y.shape[0])])
+    ZsolOpt = ZsolOpt.transpose()
+  
+    fig, ax = plt.subplots()
+    ln, = plt.plot([], [], 'ro')
+    update = lambda k : showTrebuchet(ZsolOpt[k,:], parNum0, ax)
+    aniOpt = FuncAnimation(fig, update, frames,init_func=init, blit=False)
+    plt.show()
+    
+    #method='SLSQP',
+    
+    
 
 
 
