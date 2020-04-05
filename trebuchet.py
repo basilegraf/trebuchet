@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Optimise enery transfer of a wheeled trebuchet.
 Created on Sat Apr  4 16:27:39 2020
 
 @author: basile
@@ -17,6 +18,8 @@ import matplotlib.patches as mpatches
 from matplotlib.collections import PatchCollection
 
 from matplotlib.animation import FuncAnimation
+
+plt.close('all')
 
 # state variables and derivatives
 x = sp.symbols('x')
@@ -35,6 +38,8 @@ pFixedNum = np.array([10.0,100.0,2.0,9.81])
 
 pOptim = sp.Matrix([la,lb,m3])
 pOptimNum0 = np.array([2.0,2.0,1.0])
+#pOptimNum0 = np.array([2.0,2.99,3.0])
+
 
 # state vector and derivatives
 z = sp.Matrix([x,th1,th2])
@@ -72,6 +77,9 @@ EpotFree = Epm2
 L = Ekin - Epot
 LFree = EkinFree - EpotFree
 
+# total energy
+Etot = Ekin + Epot
+
 # floor constraint for mass point p3
 c = ey.dot(p3)
 
@@ -83,7 +91,7 @@ dLdzt = sp.Matrix([L]).jacobian(zt).transpose()
 dLdz = sp.Matrix([L]).jacobian(z).transpose()
 
 mass = dLdzt.jacobian(zt)
-coriolis = dLdzt.jacobian(z) * z - dLdz
+coriolis = dLdzt.jacobian(z) * zt - dLdz
 dcdz = sp.Matrix([c]).jacobian(z).transpose()
 
 # after launch
@@ -91,7 +99,7 @@ dLdztFree = sp.Matrix([LFree]).jacobian(zt[:2,:]).transpose()
 dLdzFree = sp.Matrix([LFree]).jacobian(z[:2,:]).transpose()
 
 massFree = dLdztFree.jacobian(zt[:2,:])
-coriolisFree = dLdztFree.jacobian(z[:2,:]) * z[:2,:] - dLdzFree
+coriolisFree = dLdztFree.jacobian(z[:2,:]) * zt[:2,:] - dLdzFree
 
 
 # expressions for constraints derivative 
@@ -102,6 +110,9 @@ mass_f = sp.lambdify(((z),(pFixed),(pOptim),), mass)
 coriolis_f = sp.lambdify(((z),(zt),(pFixed),(pOptim),), coriolis)
 dcdz_f = sp.lambdify(((z),(pFixed),(pOptim),), dcdz)
 ddc_dzdz_f = sp.lambdify(((z),(pFixed),(pOptim),), ddc_dzdz)
+
+Etot_f = sp.lambdify(((z),(zt),(pFixed),(pOptim),), Etot)
+Ekm3_f = sp.lambdify(((z),(zt),(pFixed),(pOptim),), Ekm3)
 
 massFree_f = sp.lambdify(((z[:2,:]),(pFixed),(pOptim),), massFree)
 coriolisFree_f = sp.lambdify(((z[:2,:]),(zt[:2,:]),(pFixed),(pOptim),), coriolisFree)
@@ -127,7 +138,8 @@ def solve_lam(z, zt, pFixed, pOptim):
 
 def drift(z, zt, pFixed, pOptim):
     lam_N, m_N, coriolis_N, dcdz_N = solve_lam(z, zt, pFixed, pOptim)
-    if lam_N <= 0:
+    c_N = c_f(z, pFixed, pOptim)
+    if (lam_N <= 0) and (c_N < 1e-5):
         # floor constraint active
         ztt = np.linalg.solve(m_N, - coriolis_N - lam_N * dcdz_N)
     else:
@@ -149,13 +161,13 @@ def launchEvent(Z, pFixed, pOptim):
     zt = Z[3:]
     p3t_N = p3t_f(z, zt, pFixed, pOptim)
     # avoid division by 0 at begin
-    v = p3t_N + + np.array([[0.0], [1.0e-3]])
+    v = p3t_N + np.array([[0.0], [1.0e-3]])
     return v[0,0]/v[1,0] - 1.0
     
 
 # initial conditions
 def initCond(th10, pFixed, pOptim):
-    th20 = th2Init_f(th10, pFixedNum, pOptimNum0)
+    th20 = th2Init_f(th10, pFixed, pOptim)
     assert(np.all(np.isreal(th20)))
     if np.cos(th20) < 0:
         th20 = np.pi - th20
@@ -167,14 +179,54 @@ def initCond1(th10, pFixed, pOptim):
     z0, zt0 = initCond(th10, pFixed, pOptim)
     return np.concatenate((z0, zt0))
 
-# simulate
-tSpan = [0, 1.5]
-Z0 = initCond1(-1.8, pFixed, pOptim)
 
-fInt = lambda tt, ZZ : drift1(ZZ,pFixedNum, pOptimNum0)
-fEvent = lambda tt, ZZ : launchEvent(ZZ,pFixedNum, pOptimNum0)
-fEvent.terminal = True
-ivpSol = integrate.solve_ivp(fInt, tSpan, Z0, events = fEvent)
+# simulation paramters
+tSpan = [0, 1.2]
+th1Init = -1.8
+
+
+# simulation
+def simulate(pFixed, pOptim):
+    Z0 = initCond1(th1Init, pFixed, pOptim)
+    fInt = lambda tt, ZZ : drift1(ZZ,pFixed, pOptim)
+    fEvent = lambda tt, ZZ : launchEvent(ZZ,pFixed, pOptim)
+    fEvent.terminal = True
+    ivpSol = integrate.solve_ivp(fInt, tSpan, Z0, events = fEvent, rtol=1.0e-6, atol=1.0e-9)
+    return ivpSol
+
+ivpSol = simulate(pFixedNum, pOptimNum0)
+
+
+# evaluate enery transfer efficiency
+def efficiency(pFixed, pOptim):
+    ivpSol = simulate(pFixed, pOptim)
+    if not(ivpSol.success):
+        return 0.0
+    elif ivpSol.status == -1:
+        # integration step failed
+        return 0.0
+    elif ivpSol.status == 0:
+        # final time reached, no launch at all
+        return 0.0
+    elif ivpSol.status == 1:
+        # launch event reached, compute energy transfert
+        z0 = ivpSol.y[:3,0]
+        zt0 = ivpSol.y[3:,0]
+        zF = ivpSol.y[:3,-1]
+        ztF = ivpSol.y[3:,-1]
+        Etot0_N = Etot_f(z0, zt0, pFixed, pOptim)
+        Ekm3F_N = Ekm3_f(zF, ztF, pFixed, pOptim)
+        return Ekm3F_N / Etot0_N
+    else:
+        assert(False)
+        return 0.0
+    
+
+ivpSol = simulate(pFixedNum, pOptimNum0)
+ee=[Etot_f(zz[:3],zz[3:],pFixedNum, pOptimNum0) for zz in ivpSol.y.transpose()]
+plt.figure()
+plt.plot(ee)
+plt.show()
 
 # Reinterpolate at constant time steps
 t = np.linspace(0, ivpSol.t[-1], 30)
