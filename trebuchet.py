@@ -142,6 +142,16 @@ def drift1(Z,pFixed, pOptim):
     Zt = np.concatenate((zt, ztt))
     return Zt
 
+# stop event function: stop simulation when exit speed vector angle is 45 deg
+p3t_f = sp.lambdify(((z),(zt),(pFixed),(pOptim),), p3t)
+def launchEvent(Z, pFixed, pOptim):
+    z = Z[:3]
+    zt = Z[3:]
+    p3t_N = p3t_f(z, zt, pFixed, pOptim)
+    # avoid division by 0 at begin
+    v = p3t_N + + np.array([[0.0], [1.0e-3]])
+    return v[0,0]/v[1,0] - 1.0
+    
 
 # initial conditions
 def initCond(th10, pFixed, pOptim):
@@ -158,12 +168,20 @@ def initCond1(th10, pFixed, pOptim):
     return np.concatenate((z0, zt0))
 
 # simulate
-t = np.linspace(0, 1.0, 30)
+tSpan = [0, 1.5]
 Z0 = initCond1(-1.8, pFixed, pOptim)
-fInt = lambda ZZ, tt : drift1(ZZ,pFixedNum, pOptimNum0)
-Zsol = integrate.odeint(fInt, Z0, t)
 
-plt.plot(t, Zsol[:,:3])
+fInt = lambda tt, ZZ : drift1(ZZ,pFixedNum, pOptimNum0)
+fEvent = lambda tt, ZZ : launchEvent(ZZ,pFixedNum, pOptimNum0)
+fEvent.terminal = True
+ivpSol = integrate.solve_ivp(fInt, tSpan, Z0, events = fEvent)
+
+# Reinterpolate at constant time steps
+t = np.linspace(0, ivpSol.t[-1], 30)
+Zsol = np.array([np.interp(t, ivpSol.t, ivpSol.y[k,:]) for k in range(ivpSol.y.shape[0])])
+Zsol = Zsol.transpose()
+
+plt.plot(t, Zsol)
     
 
 # functions for animation
