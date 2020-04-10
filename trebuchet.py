@@ -36,7 +36,7 @@ la,lb,m3 = sp.symbols('la,lb,m3')
 lam = sp.symbols('lam')
 
 par = sp.Matrix([m1,m2,h,g,la,lb,m3])
-parNum0 = np.array([1.0,100.0,2.0,9.81,2.0,3.0,3.0])
+parNum0 = np.array([10.0,150.0,2.0,9.81,2.0,3.0,3.0])
 
 
 # state vector and derivatives
@@ -185,8 +185,8 @@ def initCond1(th10, par):
 
 
 # simulation paramters
-tSpan = [0, 1.2]
-th1Init = -1.8
+tSpan = [0, 5]
+th1Init = -1.6
 
 
 # simulation
@@ -236,7 +236,7 @@ plt.plot(ee)
 plt.show()
 
 # Reinterpolate at constant time steps
-t = np.linspace(0, ivpSol.t[-1], 30)
+t = np.linspace(0, ivpSol.t[-1], 100)
 Zsol = np.array([np.interp(t, ivpSol.t, ivpSol.y[k,:]) for k in range(ivpSol.y.shape[0])])
 Zsol = Zsol.transpose()
 
@@ -287,8 +287,8 @@ class animTrebuchet:
         self.ln.set_xdata(x[0,:])
         self.ln.set_ydata(x[1,:])
         
-        mm3 = plt.Circle(p3, radius=0.1)
-        self.ax.add_patch(mm3)
+        #mm3 = plt.Circle(p3, radius=0.1)
+        #self.ax.add_patch(mm3)
        
     def anim(self):
         return FuncAnimation(self.fig, self.updateTreb, self.frames, blit=False, repeat_delay=1000, interval=50)
@@ -299,29 +299,36 @@ aa = treb.anim()
 
     
     
-
+print(efficiency(parNum0))
 
 
 if True:  
-    pparOpt0 = parNum0[4:]
-    parOptLB = 0.3 * parNum0[4:]
-    parOptUB = 3.0 * parNum0[4:]
+    pparOpt0 = parNum0[5:]
+    hh = parNum0[2]
+    mm3 = parNum0[6]
+    parOptLB = [0.6*hh, 0.7*mm3]
+    parOptUB = [2.0*hh, 1.3*mm3]
     bnds = opt.Bounds(parOptLB, parOptUB)
-    fMin = lambda pO : -efficiency(np.concatenate((parNum0[0:4], pO)))
+    fMin = lambda pO : -efficiency(np.concatenate((parNum0[0:5], pO)))
     optSol = opt.minimize(fMin, pparOpt0, bounds=bnds, options={'disp': True})
     
-    parOpt = np.concatenate((parNum0[0:4], optSol.x))
+    parOpt = np.concatenate((parNum0[0:5], optSol.x))
     ivpOpt = simulate(parOpt)
     
-    ZsolOpt = np.array([np.interp(t, ivpOpt.t, ivpOpt.y[k,:]) for k in range(ivpOpt.y.shape[0])])
+    tOpt = np.linspace(0, ivpOpt.t[-1], 100)
+    ZsolOpt = np.array([np.interp(tOpt, ivpOpt.t, ivpOpt.y[k,:]) for k in range(ivpOpt.y.shape[0])])
     ZsolOpt = ZsolOpt.transpose()
   
     trebOpt = animTrebuchet(ZsolOpt, parOpt)
     aaOpt = trebOpt.anim()
     
+    print(efficiency(parNum0))
+    print(efficiency(parOpt))
+    
     #method='SLSQP',
     
     
+
 
 
 
