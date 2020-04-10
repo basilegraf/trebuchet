@@ -243,47 +243,57 @@ p2_f=sp.lambdify(((z),(par),), p2)
 pBar_f=sp.lambdify(((z),(par),), pBar)
 p3_f=sp.lambdify(((z),(par),), p3)
 
-fig, ax = plt.subplots()
-ln, = plt.plot([], [], 'ro')
-frames = range(0,len(t))
-def init():
-    ax.clear()   
-    ax.set_aspect(aspect='equal', adjustable='box')
-    ax.set_xlim(left=-3, right=3)
-    ax.set_ylim(bottom=-0.5, top=5)
-    ax.set_xbound(lower=-5, upper=5)
-    ax.set_ybound(lower=-0.5, upper=5)
-    plt.grid(b=True)
-    return ln,
 
-def showTrebuchet(z, par, ax):
-    z = z[:3]
-    p1 = p1_f(z, par)
-    p2 = p2_f(z, par)
-    pBar = pBar_f(z, par)
-    p3 = p3_f(z, par)
-    x = np.concatenate((p2,pBar,p3), axis=1)    
-    init()
-    axle = plt.Circle(p1, radius=0.07)
-    m2 = plt.Circle(p2, radius=0.3,color=[1.0,0.2,0.2,1.0])
-    joint = plt.Circle(pBar, radius=0.07)
-    m3 = plt.Circle(p3, radius=0.1)
-    ax.add_patch(axle)
-    ax.add_patch(joint)
-    ax.add_patch(m2)
-    ax.add_patch(m3)
-    plt.plot(x[0,:],x[1,:])
+class animTrebuchet:
+    def __init__(self, Zsol, par):
+        self.Zsol=Zsol
+        self.par=par
+        self.fig, self.ax = plt.subplots()
+        self.ln, = self.ax.plot([], [])
+        self.frames = range(0, np.shape(Zsol)[0])
+        self.ax.set_aspect(aspect='equal', adjustable='box')
+        self.ax.set_xlim(left=-3, right=3)
+        self.ax.set_ylim(bottom=-0.5, top=5)
+        self.ax.set_xbound(lower=-5, upper=5)
+        self.ax.set_ybound(lower=-0.5, upper=5)
+        self.ax.grid(b=True)
+        # geometric stuff
+        self.axle = plt.Circle([0,0], radius=0.07)
+        self.m2 = plt.Circle([0,0], radius=0.3,color=[1.0,0.2,0.2,1.0])
+        self.joint = plt.Circle([0,0], radius=0.07)
+        self.m3 = plt.Circle([0,0], radius=0.1)
+        self.ax.add_patch(self.axle)
+        self.ax.add_patch(self.joint)
+        self.ax.add_patch(self.m2)
+        self.ax.add_patch(self.m3)
+        
+    def updateTreb(self, frame):
+        z = self.Zsol[frame,:3]
+        p1 = p1_f(z, self.par)
+        p2 = p2_f(z, self.par)
+        pBar = pBar_f(z, self.par)
+        p3 = p3_f(z, self.par)
+        x = np.concatenate((p2,pBar,p3), axis=1)   
+        self.axle.set_center(p1)
+        self.m2.set_center(p2)
+        self.joint.set_center(pBar)
+        self.m3.set_center(p3)
+        self.ln.set_xdata(x[0,:])
+        self.ln.set_ydata(x[1,:])
+       
+    def anim(self):
+        return FuncAnimation(self.fig, self.updateTreb, self.frames, blit=False, repeat_delay=1000, interval=50)
+        
+
+treb = animTrebuchet(Zsol, parNum0)
+aa = treb.anim()
 
     
     
-if False:
-    update = lambda k : showTrebuchet(Zsol[k,:], parNum0, ax)
-    ani = FuncAnimation(fig, update, frames,init_func=init, blit=False)
-    plt.show()
 
 
 
-if True:  
+if False:  
     pparOpt0 = parNum0[4:]
     parOptLB = 0.3 * parNum0[4:]
     parOptUB = 3.0 * parNum0[4:]
