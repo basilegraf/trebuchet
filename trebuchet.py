@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Optimise enery transfer of a wheeled trebuchet.
+Optimise energy transfer of a trebuchet with bearing.
 Created on Sat Apr  4 16:27:39 2020
 
 @author: basile
@@ -83,13 +83,13 @@ c = ey.dot(p3)
 
 
 # equations of motion:
-# mass * ztt + coriolis + lam * dcdz == [0,0,0]
+# mass * ztt + coriolisAndPot + lam * dcdz == [0,0,0]
 # lam >= 0
 dLdzt = sp.Matrix([L]).jacobian(zt).transpose()
 dLdz = sp.Matrix([L]).jacobian(z).transpose()
 
 mass = dLdzt.jacobian(zt)
-coriolis = dLdzt.jacobian(z) * zt - dLdz
+coriolisAndPot = dLdzt.jacobian(z) * zt - dLdz
 dcdz = sp.Matrix([c]).jacobian(z).transpose()
 
 # after launch
@@ -97,7 +97,7 @@ dLdztFree = sp.Matrix([LFree]).jacobian(zt[:2,:]).transpose()
 dLdzFree = sp.Matrix([LFree]).jacobian(z[:2,:]).transpose()
 
 massFree = dLdztFree.jacobian(zt[:2,:])
-coriolisFree = dLdztFree.jacobian(z[:2,:]) * zt[:2,:] - dLdzFree
+coriolisAndPotFree = dLdztFree.jacobian(z[:2,:]) * zt[:2,:] - dLdzFree
 
 
 # expressions for constraints derivative 
@@ -105,7 +105,7 @@ ddc_dzdz = dcdz.jacobian(z)
 
 # make functions
 mass_f = sp.lambdify(((z),(par),), mass)
-coriolis_f = sp.lambdify(((z),(zt),(par),), coriolis)
+coriolisAndPot_f = sp.lambdify(((z),(zt),(par),), coriolisAndPot)
 dcdz_f = sp.lambdify(((z),(par),), dcdz)
 ddc_dzdz_f = sp.lambdify(((z),(par),), ddc_dzdz)
 
@@ -113,7 +113,7 @@ Etot_f = sp.lambdify(((z),(zt),(par),), Etot)
 Ekm3_f = sp.lambdify(((z),(zt),(par),), Ekm3)
 
 massFree_f = sp.lambdify(((z[:2,:]),(par),), massFree)
-coriolisFree_f = sp.lambdify(((z[:2,:]),(zt[:2,:]),(par),), coriolisFree)
+coriolisAndPotFree_f = sp.lambdify(((z[:2,:]),(zt[:2,:]),(par),), coriolisAndPotFree)
 
 # initial solution; th2 as a function of th1 such that m3 is on the floor
 th2Init = sp.asin(-(h + la * sp.sin(th1))/lb)
@@ -126,29 +126,42 @@ def solve_lam(z, zt, par):
     mInv_N = np.linalg.inv(m_N)
     dcdz_N = dcdz_f(z, par)
     ddc_dzdz_N = ddc_dzdz_f(z, par)
-    coriolis_N = coriolis_f(z, zt, par)
+    coriolisAndPot_N = coriolisAndPot_f(z, zt, par)
     den = np.matmul(np.matmul(dcdz_N.transpose(), mInv_N), dcdz_N)
     num1 = np.matmul(np.matmul(zt, ddc_dzdz_N), zt)
-    num2 = np.matmul(np.matmul(dcdz_N.transpose(), mInv_N), coriolis_N)
+    num2 = np.matmul(np.matmul(dcdz_N.transpose(), mInv_N), coriolisAndPot_N)
     lam_N = (num1 - num2) / den
-    return lam_N, m_N, coriolis_N, dcdz_N
+    return lam_N, m_N, coriolisAndPot_N, dcdz_N
 
 
 def drift(z, zt, par):
-    lam_N, m_N, coriolis_N, dcdz_N = solve_lam(z, zt, par)
+    lam_N, m_N, coriolisAndPot_N, dcdz_N = solve_lam(z, zt, par)
     c_N = c_f(z, par)
     if (lam_N <= 0) and (c_N < 1e-5):
         # floor constraint active
-        ztt = np.linalg.solve(m_N, - coriolis_N - lam_N * dcdz_N)
+        ztt = np.linalg.solve(m_N, - coriolisAndPot_N - lam_N * dcdz_N)
     else:
         # floor constraint inactive
-        ztt = np.linalg.solve(m_N, - coriolis_N)
+        ztt = np.linalg.solve(m_N, - coriolisAndPot_N)
     return ztt[:,0]
 
 def drift1(Z,par):
     z = Z[:3]
     zt = Z[3:]
     ztt = drift(z, zt, par);
+    Zt = np.concatenate((zt, ztt))
+    return Zt
+
+def driftFree(z, zt, par):
+    mF_N = massFree_f(z, par)
+    coriolisAndPotFree_N = coriolisAndPotFree_f(z, zt, par)
+    ztt = np.linalg.solve(mF_N, - coriolisAndPotFree_N)
+    return ztt[:,0]
+
+def drift1Free(Z,par):
+    z = Z[:2]
+    zt = Z[2:]
+    ztt = driftFree(z, zt, par);
     Zt = np.concatenate((zt, ztt))
     return Zt
 
@@ -159,11 +172,12 @@ def launchEvent(tt, Z, par, tMin = 0.1):
     z = Z[:3]
     zt = Z[3:]
     p3t_N = p3t_f(z, zt, par)
-    # avoid division by 0 at begin
+    # Apply small angle to avoid the jump of atan2 at -pi
     v = p3t_N
     phi = -0.01;
     R = np.array([[np.cos(phi), -np.sin(phi)],[np.sin(phi), np.cos(phi)]])
     v = np.matmul(R,v)
+    # Avoid 0 vector v at begin and correct for phi rotation
     ev = np.arctan2(v[1,0],v[0,0]-0.000001) - phi - np.arctan2(1,1)
     vvv.append(v)
     return ev 
@@ -186,6 +200,7 @@ def initCond1(th10, par):
 
 # simulation paramters
 tSpan = [0, 5]
+tSpanFree = [0, 1]
 th1Init = -1.6
 
 
@@ -196,15 +211,22 @@ def simulate(par):
     fEvent = lambda tt, ZZ : launchEvent(tt, ZZ,par)
     fEvent.terminal = True
     ivpSol = integrate.solve_ivp(fInt, tSpan, Z0, events = fEvent, rtol=1.0e-5, atol=1.0e-8)
-    return ivpSol
+    # Free
+    if ivpSol.success & ivpSol.status == 1:
+        ZFree0 = ivpSol.y[[0,1,3,4],-1]
+        fFreeInt = lambda tt, ZZ : drift1Free(ZZ,par)
+        ivpSolFree = integrate.solve_ivp(fFreeInt, tSpanFree, ZFree0, rtol=1.0e-5, atol=1.0e-8)
+        return ivpSol, ivpSolFree
+    else:
+        return ivpSol, []
 
-ivpSol = simulate(parNum0)
+ivpSol, ivpSolFree = simulate(parNum0)
 
 
 # evaluate enery transfer efficiency
 def efficiency(par):
     try:
-        ivpSol = simulate(par)          
+        ivpSol, ivpSolFree = simulate(par)          
         if not(ivpSol.success):
             return 0.0
         elif ivpSol.status == -1:
@@ -229,18 +251,35 @@ def efficiency(par):
         return 0.0
     
 
-ivpSol = simulate(parNum0)
+ivpSol, ivpSolFree = simulate(parNum0)
 ee=[Etot_f(zz[:3],zz[3:],parNum0) for zz in ivpSol.y.transpose()]
 plt.figure()
 plt.plot(ee)
 plt.show()
 
-# Reinterpolate at constant time steps
-t = np.linspace(0, ivpSol.t[-1], 100)
-Zsol = np.array([np.interp(t, ivpSol.t, ivpSol.y[k,:]) for k in range(ivpSol.y.shape[0])])
-Zsol = Zsol.transpose()
+
+
+# Reinterpolate both solutions at constant time steps
+def reinterp(ivpSol, ivpSolFree):
+    tLaunch = ivpSol.t[-1]
+    tEnd = tLaunch + ivpSolFree.t[-1]
+    t = np.linspace(0, tEnd, 100)
+    y = ivpSol.y
+    yF = ivpSolFree.y
+    yF = np.concatenate((yF[:2,:],np.zeros((1,yF.shape[1])), yF[2:,:],np.zeros((1,yF.shape[1])) ))
+    yAll = np.concatenate((y,yF[:,1:]), axis=1)
+    ty = ivpSol.t
+    tyF = ivpSolFree.t + tLaunch
+    tyAll = np.concatenate((ty,tyF[1:]))
+    Zsol = np.array([np.interp(t, tyAll, yAll[k,:]) for k in range(yAll.shape[0])])
+    Zsol = Zsol.transpose()
+    kLast = np.where(t<tLaunch)[0][-1]
+    return t, Zsol, kLast
+
+t, Zsol, kLast = reinterp(ivpSol, ivpSolFree)
 
 plt.plot(t, Zsol)
+
     
 
 # functions for animation
@@ -251,12 +290,16 @@ p3_f=sp.lambdify(((z),(par),), p3)
 
 
 class animTrebuchet:
-    def __init__(self, Zsol, par):
+    def __init__(self, Zsol, kLast, par):
         self.Zsol=Zsol
+        self.kLast = kLast
         self.par=par
         self.fig, self.ax = plt.subplots()
-        self.ln, = self.ax.plot([], [])
         self.frames = range(0, np.shape(Zsol)[0])
+        
+    def initAnim(self):
+        self.ax.clear()
+        self.ln, = self.ax.plot([], [])
         self.ax.set_aspect(aspect='equal', adjustable='box')
         self.ax.set_xlim(left=-3, right=3)
         self.ax.set_ylim(bottom=-0.5, top=8)
@@ -264,10 +307,12 @@ class animTrebuchet:
         self.ax.set_ybound(lower=-0.5, upper=8)
         self.ax.grid(b=True)
         # geometric stuff
-        self.axle = plt.Circle([0,0], radius=0.07)
+        hh = self.par[2]
+        self.ax.plot([-2,2],[hh,hh], color=[0.6,0.6,0.6])
+        self.axle = plt.Circle([0,0], radius=0.1)
         self.m2 = plt.Circle([0,0], radius=0.3,color=[1.0,0.2,0.2,1.0])
-        self.joint = plt.Circle([0,0], radius=0.07)
-        self.m3 = plt.Circle([0,0], radius=0.1)
+        self.joint = plt.Circle([0,0], radius=0.1)
+        self.m3 = plt.Circle([0,0], radius=0.15)
         self.ax.add_patch(self.axle)
         self.ax.add_patch(self.joint)
         self.ax.add_patch(self.m2)
@@ -284,25 +329,30 @@ class animTrebuchet:
         self.m2.set_center(p2)
         self.joint.set_center(pBar)
         self.m3.set_center(p3)
-        self.ln.set_xdata(x[0,:])
-        self.ln.set_ydata(x[1,:])
-        
-        #mm3 = plt.Circle(p3, radius=0.1)
-        #self.ax.add_patch(mm3)
+        if frame <= self.kLast:
+            self.ln.set_xdata(x[0,:])
+            self.ln.set_ydata(x[1,:])
+            self.m3.set_radius(0.1)
+            mm3 = plt.Circle(p3, radius=0.05, color=[1,0,0])
+            self.ax.add_patch(mm3)
+        else:
+            self.ln.set_xdata(x[0,:-1])
+            self.ln.set_ydata(x[1,:-1])
+            self.m3.set_radius(0)
        
     def anim(self):
-        return FuncAnimation(self.fig, self.updateTreb, self.frames, blit=False, repeat_delay=1000, interval=50)
+        return FuncAnimation(self.fig, self.updateTreb, self.frames, init_func=self.initAnim, blit=False, repeat_delay=1000, interval=50)
         
 
-treb = animTrebuchet(Zsol, parNum0)
+treb = animTrebuchet(Zsol, kLast, parNum0)
 aa = treb.anim()
 
     
     
 print(efficiency(parNum0))
 
-
-if True:  
+# optimise
+if False:  
     pparOpt0 = parNum0[5:]
     hh = parNum0[2]
     mm3 = parNum0[6]
@@ -313,19 +363,16 @@ if True:
     optSol = opt.minimize(fMin, pparOpt0, bounds=bnds, options={'disp': True})
     
     parOpt = np.concatenate((parNum0[0:5], optSol.x))
-    ivpOpt = simulate(parOpt)
+    ivpOpt, ivpOptFree = simulate(parOpt)
     
-    tOpt = np.linspace(0, ivpOpt.t[-1], 100)
-    ZsolOpt = np.array([np.interp(tOpt, ivpOpt.t, ivpOpt.y[k,:]) for k in range(ivpOpt.y.shape[0])])
-    ZsolOpt = ZsolOpt.transpose()
+    tOpt, ZsolOpt, kLastOpt = reinterp(ivpOpt, ivpOptFree)
   
-    trebOpt = animTrebuchet(ZsolOpt, parOpt)
+    trebOpt = animTrebuchet(ZsolOpt, kLastOpt, parOpt)
     aaOpt = trebOpt.anim()
     
     print(efficiency(parNum0))
     print(efficiency(parOpt))
     
-    #method='SLSQP',
     
     
 
