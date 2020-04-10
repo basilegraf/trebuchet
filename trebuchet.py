@@ -154,13 +154,19 @@ def drift1(Z,par):
 
 # stop event function: stop simulation when exit speed vector angle is 45 deg
 p3t_f = sp.lambdify(((z),(zt),(par),), p3t)
+vvv=[]
 def launchEvent(tt, Z, par, tMin = 0.1):
     z = Z[:3]
     zt = Z[3:]
     p3t_N = p3t_f(z, zt, par)
     # avoid division by 0 at begin
-    v = p3t_N + np.array([[1.0e-5], [0.5e-5]])
-    return v[1,0]/v[0,0] - 1.0 
+    v = p3t_N
+    phi = -0.01;
+    R = np.array([[np.cos(phi), -np.sin(phi)],[np.sin(phi), np.cos(phi)]])
+    v = np.matmul(R,v)
+    ev = np.arctan2(v[1,0],v[0,0]-0.000001) - phi - np.arctan2(1,1)
+    vvv.append(v)
+    return ev 
     
 
 # initial conditions
@@ -253,9 +259,9 @@ class animTrebuchet:
         self.frames = range(0, np.shape(Zsol)[0])
         self.ax.set_aspect(aspect='equal', adjustable='box')
         self.ax.set_xlim(left=-3, right=3)
-        self.ax.set_ylim(bottom=-0.5, top=5)
+        self.ax.set_ylim(bottom=-0.5, top=8)
         self.ax.set_xbound(lower=-5, upper=5)
-        self.ax.set_ybound(lower=-0.5, upper=5)
+        self.ax.set_ybound(lower=-0.5, upper=8)
         self.ax.grid(b=True)
         # geometric stuff
         self.axle = plt.Circle([0,0], radius=0.07)
@@ -280,6 +286,9 @@ class animTrebuchet:
         self.m3.set_center(p3)
         self.ln.set_xdata(x[0,:])
         self.ln.set_ydata(x[1,:])
+        
+        mm3 = plt.Circle(p3, radius=0.1)
+        self.ax.add_patch(mm3)
        
     def anim(self):
         return FuncAnimation(self.fig, self.updateTreb, self.frames, blit=False, repeat_delay=1000, interval=50)
@@ -293,7 +302,7 @@ aa = treb.anim()
 
 
 
-if False:  
+if True:  
     pparOpt0 = parNum0[4:]
     parOptLB = 0.3 * parNum0[4:]
     parOptUB = 3.0 * parNum0[4:]
@@ -307,11 +316,8 @@ if False:
     ZsolOpt = np.array([np.interp(t, ivpOpt.t, ivpOpt.y[k,:]) for k in range(ivpOpt.y.shape[0])])
     ZsolOpt = ZsolOpt.transpose()
   
-    fig, ax = plt.subplots()
-    ln, = plt.plot([], [], 'ro')
-    update = lambda k : showTrebuchet(ZsolOpt[k,:], parNum0, ax)
-    aniOpt = FuncAnimation(fig, update, frames,init_func=init, blit=False)
-    plt.show()
+    trebOpt = animTrebuchet(ZsolOpt, parOpt)
+    aaOpt = trebOpt.anim()
     
     #method='SLSQP',
     
