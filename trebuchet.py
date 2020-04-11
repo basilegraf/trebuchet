@@ -210,7 +210,7 @@ def simulate(par):
     fInt = lambda tt, ZZ : drift1(ZZ,par)
     fEvent = lambda tt, ZZ : launchEvent(tt, ZZ,par)
     fEvent.terminal = True
-    ivpSol = integrate.solve_ivp(fInt, tSpan, Z0, events = fEvent, rtol=1.0e-5, atol=1.0e-8)
+    ivpSol = integrate.solve_ivp(fInt, tSpan, Z0, events = fEvent, rtol=1.0e-5, atol=1.0e-8, max_step = 0.01)
     # Free
     if ivpSol.success & ivpSol.status == 1:
         ZFree0 = ivpSol.y[[0,1,3,4],-1]
@@ -290,12 +290,17 @@ p3_f=sp.lambdify(((z),(par),), p3)
 
 
 class animTrebuchet:
-    def __init__(self, Zsol, kLast, par):
+    def __init__(self, Zsol, kLast, par, ivpSol):
         self.Zsol=Zsol
         self.kLast = kLast
         self.par=par
         self.fig, self.ax = plt.subplots()
         self.frames = range(0, np.shape(Zsol)[0])
+        # non resampled m3 path
+        self.m3Path = np.array(
+                [p3_f(ivpSol.y.transpose()[k][:3], par)[:,0] 
+                for k in range(0,ivpSol.y.shape[1])]
+                )
         
     def initAnim(self):
         self.ax.clear()
@@ -311,12 +316,14 @@ class animTrebuchet:
         self.ax.plot([-2,2],[hh,hh], color=[0.6,0.6,0.6])
         self.axle = plt.Circle([0,0], radius=0.1)
         self.m2 = plt.Circle([0,0], radius=0.3,color=[1.0,0.2,0.2,1.0])
-        self.joint = plt.Circle([0,0], radius=0.1)
+        self.joint = plt.Circle([0,0], radius=0.05)
         self.m3 = plt.Circle([0,0], radius=0.15)
         self.ax.add_patch(self.axle)
         self.ax.add_patch(self.joint)
         self.ax.add_patch(self.m2)
         self.ax.add_patch(self.m3)
+        # m3 path
+        self.ax.plot(self.m3Path[:,0], self.m3Path[:,1], color=[0.6,0.9,0.9], zorder=-1)
         
     def updateTreb(self, frame):
         z = self.Zsol[frame,:3]
@@ -344,7 +351,7 @@ class animTrebuchet:
         return FuncAnimation(self.fig, self.updateTreb, self.frames, init_func=self.initAnim, blit=False, repeat_delay=1000, interval=50)
         
 
-treb = animTrebuchet(Zsol, kLast, parNum0)
+treb = animTrebuchet(Zsol, kLast, parNum0, ivpSol)
 aa = treb.anim()
 
     
@@ -352,7 +359,7 @@ aa = treb.anim()
 print(efficiency(parNum0))
 
 # optimise
-if False:  
+if True:  
     pparOpt0 = parNum0[5:]
     hh = parNum0[2]
     mm3 = parNum0[6]
@@ -367,7 +374,7 @@ if False:
     
     tOpt, ZsolOpt, kLastOpt = reinterp(ivpOpt, ivpOptFree)
   
-    trebOpt = animTrebuchet(ZsolOpt, kLastOpt, parOpt)
+    trebOpt = animTrebuchet(ZsolOpt, kLastOpt, parOpt, ivpOpt)
     aaOpt = trebOpt.anim()
     
     print(efficiency(parNum0))
