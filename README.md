@@ -15,9 +15,11 @@ The trebuchet I'm simulating has an axle free to move on a horizontal line. It s
 
 
 Before otpimisation:
+
 ![](beforeOptim.gif) 
 
 After optimisation
+
 ![](afterOptim.gif)
 
 I hate all weapons in the world. But I can't help it, trebuchets are fun...
