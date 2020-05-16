@@ -23,6 +23,7 @@ try:
 except:
     pass
 
+saveAnimation = False
 
 plt.close('all')
 
@@ -357,6 +358,9 @@ class animTrebuchet:
 treb = animTrebuchet(Zsol, kLast, parNum0, ivpSol)
 aa = treb.anim()
 
+if saveAnimation:
+    aa.save('beforeOptim.gif', writer='imagemagick', fps=25)
+
     
     
 print(efficiency(parNum0))
@@ -382,6 +386,9 @@ if True:
     
     print(efficiency(parNum0))
     print(efficiency(parOpt))
+    
+    if saveAnimation:
+        aaOpt.save('afterOptim.gif', writer='imagemagick', fps=25)
     
     
     
