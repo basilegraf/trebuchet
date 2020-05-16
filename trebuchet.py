@@ -13,13 +13,16 @@ import scipy.integrate as integrate
 import scipy.optimize as opt
 import matplotlib.pyplot as plt
 
-
-import matplotlib.path as mpath
-import matplotlib.lines as mlines
-import matplotlib.patches as mpatches
-from matplotlib.collections import PatchCollection
-
 from matplotlib.animation import FuncAnimation
+
+# Use qt for animations
+try:
+    import IPython
+    shell = IPython.get_ipython()
+    shell.enable_matplotlib(gui='qt')
+except:
+    pass
+
 
 plt.close('all')
 
