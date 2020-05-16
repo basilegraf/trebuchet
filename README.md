@@ -1,5 +1,5 @@
 # Trebuchet
-##Optimize energy transfer of a trebuchet.
+## Optimize energy transfer of a trebuchet.
 
 This is a python script I used to teach myself and explore some of the possibilities offed by `sympy` and `scipy` (especially ODE numerical integration and optimization)
 
