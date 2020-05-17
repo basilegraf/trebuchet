@@ -5,7 +5,7 @@ This is a python script I used to teach myself and explore some of the possibili
 
 1. Derive differential equations with analytical mechanics in `sympy`
 2. Turn symbolic expressions into functions with `lambdify()` 
-3. Simulate system using an event to detect projectile takeoff and switch equations with `scipy.integrate`
+3. Simulate the system with conditional floor constraint and using an event to detect launch at 45 degrees with `scipy.integrate`
 4. Optimize model parameters to increase energy transfer with `scipy.optimize`
 5. Animate with `matplotlib.animation`
 
